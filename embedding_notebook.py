@@ -9,7 +9,7 @@ def _():
     import polars as pl
     import marimo as mo
     from sleuth.datastore import execute_query
-
+    import json
     def run_query(sql):
         result = execute_query(sql)
         print(result)
@@ -18,90 +18,148 @@ def _():
     mo.md("""
     ### initialization, define common functions
     """)
-    return execute_query, mo, pl, run_query
+    return execute_query, json, mo, pl, run_query
 
 
 @app.cell(hide_code=True)
-def _(pl):
+def _(execute_query, pl):
     from sleuth.llm.algo import (
         most_relevant_chunks,
         relevance_by_appearance,
         relevance_by_distance,
+        gather_chunk_distances,
     )
 
     from sleuth.trustee import get_relevant_chunks_with_distances
 
-    tag = "123"
+    tag = "orig225"
+    search_tag = "gemini768"
 
-    def run_vector_search(cik, accession_number):
-        result = get_relevant_chunks_with_distances(
-            cik=cik, accession_number=accession_number,    
+    all_filings = []
+
+    result = execute_query("select distinct cik, accession_number from filing_chunks_embeddings order by 1,2")
+    for row in result:
+        relevance_result = get_relevant_chunks_with_distances(
+            cik=row["cik"], accession_number=row["accession_number"],    
             embedding_table_name="filing_chunks_embeddings",
             search_phrase_table_name ="search_phrase_embeddings",
-            search_phrase_tag="gemini_768",
+            search_phrase_tag=search_tag,
             embedding_tag=tag,
         )
-        return pl.DataFrame(result)
+        chunk_distances = gather_chunk_distances(relevance_result)
+        by_appearance = most_relevant_chunks(relevance_by_appearance(chunk_distances))
+        by_distance = most_relevant_chunks(relevance_by_distance(chunk_distances))
 
-    run_vector_search("1002427","0001133228-24-004879")
+        all_filings.append(
+            {
+                "cik":row["cik"], "accession_number":row["accession_number"],
+                "relevance_result": relevance_result,
+                "by_appearance": by_appearance,
+                "by_distance": by_distance,
+            })
+
+    print(f"Loaded {len(all_filings)} filings")
+
+    filings = pl.DataFrame(all_filings)
+    filings = filings.with_columns(
+        pl.concat_str([pl.col("cik"), pl.col("accession_number")], separator=" / ").alias("key")
+    )
+    filings
     return (
+        all_filings,
+        by_appearance,
+        by_distance,
+        chunk_distances,
+        filings,
+        gather_chunk_distances,
         get_relevant_chunks_with_distances,
         most_relevant_chunks,
         relevance_by_appearance,
         relevance_by_distance,
-        run_vector_search,
+        relevance_result,
+        result,
+        row,
+        search_tag,
         tag,
     )
 
 
+@app.cell
+def _(filings, mo, pl):
+    filtered_filings = filings.filter(
+        (pl.col("by_distance") != pl.col("by_appearance"))
+    )
+    # filtered_filings = filings
+    mo.ui.dataframe(filtered_filings)
+    return (filtered_filings,)
+
+
 @app.cell(hide_code=True)
-def _(mo):
-    filings  = {"1002427 / 0001133228-24-004879" : ["199","200"]}
+def _(filtered_filings, mo):
+    filing_keys = filtered_filings["key"].to_list()
 
-
-    filing_dropdown = mo.ui.dropdown(options=filings.keys(), label="select a filing")
+    filing_dropdown = mo.ui.dropdown(options=filing_keys, label="select a filing")
 
     mo.md(f"""
     #### change the filtered_df above to examine different scenarios
     {filing_dropdown}
     """)
-    return filing_dropdown, filings
+    return filing_dropdown, filing_keys
 
 
 @app.cell(hide_code=True)
-def _(filing_dropdown, filings, mo):
-    chunks = filings[filing_dropdown.value] if filing_dropdown.value else []
-    chunk_dropdown = mo.ui.dropdown(options=chunks, label="select chunk to view")
-    chunk_dropdown
-    return chunk_dropdown, chunks
+def _(filing_dropdown, filtered_filings, mo):
+    chunks = []
+    if filing_dropdown.value:
+        _tmp3 = filtered_filings.filter(filtered_filings["key"] == filing_dropdown.value).select(["cik", "accession_number","by_distance", "by_appearance"])
+        selected_row = dict(zip(_tmp3.columns, _tmp3.row(0)))
+        #print(selected_row)
+        chunks = [str(selected_row["by_distance"]),str(selected_row["by_appearance"])] 
+
+    chunk_text_input = mo.ui.text(placeholder="enter chunk number or range")
+    chunk_dropdown = mo.ui.dropdown(options=chunks, label="select chunk to view, first by distance, second by appearance")
+    mo.md(f"""
+    {chunk_dropdown}
+    {chunk_text_input}
+    """)
+    return chunk_dropdown, chunk_text_input, chunks, selected_row
 
 
-@app.cell
-def _(chunk_dropdown, filing_dropdown, mo, tag):
+@app.cell(hide_code=True)
+def _(
+    chunk_dropdown,
+    chunk_text_input,
+    execute_query,
+    json,
+    mo,
+    selected_row,
+    tag,
+):
     from sleuth.trustee import get_text_by_chunk_num
     selected_text=""
     if chunk_dropdown.value:
-        _tmp1 = filing_dropdown.value.split("/")
-        cik, accession_number  = _tmp1[0].strip(), _tmp1[1].strip()
-        chunk_nums = [int(n) for n in chunk_dropdown.value.split(",")]
-        selected_text = get_text_by_chunk_num(text_table_name="filing_text_chunks",chunk_nums=chunk_nums,
-                                              tag=tag,cik=cik,accession_number=accession_number)
+        if chunk_text_input.value:
+            chunk_nums = [int(s) for s in chunk_text_input.value.split(",")]
+        else:
+            chunk_nums = json.loads(chunk_dropdown.value)
+
+        _ret = execute_query(f""" 
+        SELECT
+            STRING_AGG('✳️✳️✳️✳️ ' || chunk_num || ' ✳️✳️✳️✳️\n' || chunk_text, '\n' ORDER BY chunk_num) as relevant_text
+        FROM filing_text_chunks
+            WHERE cik = %s AND accession_number = %s AND %s = ANY(tags) AND chunk_num = ANY(%s)
+        """,
+             (selected_row["cik"], selected_row["accession_number"],tag, chunk_nums) )
+        selected_text=_ret[0]["relevant_text"]
 
     mo.ui.text_area(selected_text, rows=20)
-    return (
-        accession_number,
-        chunk_nums,
-        cik,
-        get_text_by_chunk_num,
-        selected_text,
-    )
+    return chunk_nums, get_text_by_chunk_num, selected_text
 
 
-@app.cell
-def _(filing_dropdown, mo):
-    _tmp2 = filing_dropdown.value.split("/")
-    cik_input = mo.ui.text(_tmp2[0].strip())
-    accession_number_input = mo.ui.text(_tmp2[1].strip())
+@app.cell(hide_code=True)
+def _(mo, selected_row):
+    cik_input = mo.ui.text(selected_row["cik"])
+    accession_number_input = mo.ui.text(selected_row["accession_number"])
     mo.md(f"""
     ### Select filing to examine
     {cik_input} {accession_number_input}
@@ -110,12 +168,20 @@ def _(filing_dropdown, mo):
 
 
 @app.cell
-def _():
-    # search_df = run_vector_search(cik_input.value, accession_number_input.value)
-    # chunk_distances = gather_chunk_distances(search_df)
-    # print(relevance_by_distance(chunk_distances))
-    # print(relevance_by_appearance(chunk_distances))
-    # search_df
+def _(
+    get_relevant_chunks_with_distances,
+    pl,
+    search_tag,
+    selected_row,
+    tag,
+):
+    pl.DataFrame(get_relevant_chunks_with_distances(
+        cik=selected_row["cik"], accession_number=selected_row["accession_number"],    
+        embedding_table_name="filing_chunks_embeddings",
+        search_phrase_table_name ="search_phrase_embeddings",
+        search_phrase_tag=search_tag,
+        embedding_tag=tag,
+    ))
     return
 
 
