@@ -209,6 +209,27 @@ wheels = [
 ]
 
 [[package]]
+name = "edgar-notebook"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "edgar-sleuth" },
+    { name = "en-core-web-sm" },
+    { name = "marimo" },
+    { name = "polars" },
+    { name = "python-dotenv" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "edgar-sleuth", directory = "../edgar_sleuth" },
+    { name = "en-core-web-sm", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
+    { name = "marimo", specifier = ">=0.10.9" },
+    { name = "polars", specifier = ">=1.19.0" },
+    { name = "python-dotenv", specifier = ">=1.0.1" },
+]
+
+[[package]]
 name = "edgar-sleuth"
 version = "0.4.0"
 source = { directory = "../edgar_sleuth" }
@@ -779,27 +800,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ad/6d/1a3a84b2c3186465aa5e95146e96610b875b7a5bb899f6dd1206f0444c0e/narwhals-1.21.1.tar.gz", hash = "sha256:44082c6273fd0125a2bde5baae6ddb7465e185c24fd6e1c5e71cab1d746c89cc", size = 242809 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/4f/7c482d8fe70bc19e1e121ccd205fedac936bbb2ff3b789775294fdbe525b/narwhals-1.21.1-py3-none-any.whl", hash = "sha256:f5f2cd33a6fa636de74067f4050d6dd9a9343b39a5a911dc97810d55d8f24cdd", size = 282702 },
-]
-
-[[package]]
-name = "notebook2"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "edgar-sleuth" },
-    { name = "en-core-web-sm" },
-    { name = "marimo" },
-    { name = "polars" },
-    { name = "python-dotenv" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "edgar-sleuth", directory = "../edgar_sleuth" },
-    { name = "en-core-web-sm", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" },
-    { name = "marimo", specifier = ">=0.10.9" },
-    { name = "polars", specifier = ">=1.19.0" },
-    { name = "python-dotenv", specifier = ">=1.0.1" },
 ]
 
 [[package]]
