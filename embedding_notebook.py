@@ -10,6 +10,9 @@ def _():
     import marimo as mo
     from sleuth.datastore import execute_query
     import json
+    from dotenv import load_dotenv
+
+    load_dotenv()
 
     def run_query(sql):
         result = execute_query(sql)
@@ -19,7 +22,7 @@ def _():
     mo.md("""
     ### initialization, define common functions
     """)
-    return execute_query, json, mo, pl, run_query
+    return execute_query, json, load_dotenv, mo, pl, run_query
 
 
 @app.cell(hide_code=True)
@@ -31,10 +34,10 @@ def _(execute_query, pl):
         gather_chunk_distances,
     )
 
-    from sleuth.trustee import get_relevant_chunks_with_distances
+    from sleuth.trustee import relevant_chunks_with_distances
 
     tag = "orig225"
-    search_tag = "gemini768"
+    search_tag = "orig225"
 
     all_filings = []
 
@@ -42,7 +45,7 @@ def _(execute_query, pl):
         "select distinct cik, accession_number from filing_chunks_embeddings order by 1,2"
     )
     for _row in _result:
-        _relevance_result = get_relevant_chunks_with_distances(
+        _relevance_result = relevant_chunks_with_distances(
             cik=_row["cik"],
             accession_number=_row["accession_number"],
             embedding_table_name="filing_chunks_embeddings",
@@ -77,10 +80,10 @@ def _(execute_query, pl):
         all_filings,
         filings,
         gather_chunk_distances,
-        get_relevant_chunks_with_distances,
         most_relevant_chunks,
         relevance_by_appearance,
         relevance_by_distance,
+        relevant_chunks_with_distances,
         search_tag,
         tag,
     )
@@ -176,15 +179,9 @@ def _(mo, selected_row):
 
 
 @app.cell(hide_code=True)
-def _(
-    get_relevant_chunks_with_distances,
-    pl,
-    search_tag,
-    selected_row,
-    tag,
-):
+def _(pl, relevant_chunks_with_distances, search_tag, selected_row, tag):
     pl.DataFrame(
-        get_relevant_chunks_with_distances(
+        relevant_chunks_with_distances(
             cik=selected_row["cik"],
             accession_number=selected_row["accession_number"],
             embedding_table_name="filing_chunks_embeddings",
